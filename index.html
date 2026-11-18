@@ -924,7 +924,8 @@ calc();
 // Configuración pública del proyecto de Firebase (no es secreta: la protección la dan las reglas de Firestore).
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyCPWkEAQHFLlUNW2ykVWiFwsnkxMaKA5rg',
-  authDomain: 'calculadora-viajes-6e1dc.firebaseapp.com',
+  // En el hosting de Firebase el inicio de sesión usa el mismo dominio de la app (necesario en celulares).
+  authDomain: /\.(web\.app|firebaseapp\.com)$/.test(location.hostname) ? location.hostname : 'calculadora-viajes-6e1dc.firebaseapp.com',
   projectId: 'calculadora-viajes-6e1dc',
   storageBucket: 'calculadora-viajes-6e1dc.firebasestorage.app',
   messagingSenderId: '803175615518',
@@ -940,11 +941,12 @@ if (!FIREBASE_CONFIG){
   A.status('busy');
   try{
     const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
-    const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
+    const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
     const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, writeBatch } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 
     const app = initializeApp(FIREBASE_CONFIG);
     const auth = getAuth(app);
+    getRedirectResult(auth).catch(e => { console.error(e); alert('No se pudo iniciar sesión: ' + (e.message || e.code)); });
     // Caché local: funciona sin señal y sube los cambios cuando vuelve la conexión.
     const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
     const clean = o => JSON.parse(JSON.stringify(o)); // Firestore no acepta valores undefined
