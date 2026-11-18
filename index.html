@@ -37,6 +37,11 @@ header{position:sticky;top:0;z-index:1000;background:var(--card);border-bottom:1
 .top{max-width:760px;margin:0 auto;padding:10px 16px 0;display:flex;align-items:center;gap:10px}
 .top h1{font-size:17px;margin:0;font-weight:700}
 .top .veh{margin-left:auto;font-size:12px;color:var(--muted)}
+#syncBtn{min-height:30px;padding:4px 10px;font-size:12px}
+#syncBtn[data-state="ok"]{color:var(--ok)}
+#syncBtn[data-state="off"]{color:var(--accent)}
+#syncBtn[data-state="error"],#syncBtn[data-state="offline"]{color:var(--warn)}
+@media (max-width:420px){ .top .veh{display:none} #syncBtn{margin-left:auto} }
 nav{max-width:760px;margin:0 auto;display:flex;padding:0 8px}
 nav button{flex:1;background:none;border:0;border-bottom:3px solid transparent;padding:10px 4px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer}
 nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
@@ -117,7 +122,7 @@ dialog .card{margin:0;border:0;box-shadow:none}
 </head>
 <body>
 <header>
-  <div class="top"><h1>🚗 Calculadora de Viajes</h1><span class="veh" id="vehLabel"></span></div>
+  <div class="top"><h1>🚗 Calculadora de Viajes</h1><span class="veh" id="vehLabel"></span><button class="btn small hidden" id="syncBtn">☁️</button></div>
   <nav>
     <button data-v="cotizar" class="on">Cotizar</button>
     <button data-v="clientes">Clientes</button>
@@ -334,9 +339,18 @@ dialog .card{margin:0;border:0;box-shadow:none}
     <div class="field"><label>Aclaración</label><input data-s="aclaracion"></div>
   </div>
 
+  <div class="card" id="syncCard">
+    <h2>Sincronización entre celular y compu</h2>
+    <p class="hint" id="syncInfo" style="margin-bottom:10px">Cargando…</p>
+    <div class="btns">
+      <button class="btn primary hidden" id="btnLogin">Entrar con Google</button>
+      <button class="btn hidden" id="btnLogout">Cerrar sesión</button>
+    </div>
+  </div>
+
   <div class="card">
-    <h2>Tus datos</h2>
-    <p class="hint" style="margin-bottom:10px">Los clientes y viajes se guardan en este dispositivo. Para pasarlos del celular a la compu (o al revés), exportá una copia en uno e importala en el otro.</p>
+    <h2>Copia de seguridad</h2>
+    <p class="hint" style="margin-bottom:10px">Descargá un archivo con todos tus clientes, viajes y tarifas para guardarlo aparte.</p>
     <div class="btns">
       <button class="btn" id="btnExport">⬇️ Exportar copia</button>
       <button class="btn" id="btnImport">⬆️ Importar copia</button>
@@ -392,6 +406,33 @@ let editingId = null;
 let lastCalc = null;
 const coordsCache = {};   // input id -> {lat,lon} fijado por geolocalización
 
+/* Guarda en este dispositivo y, si hay sesión iniciada, también en la nube (window.cloud lo define el módulo de Firebase). */
+const sync = {
+  settings(){ const ok = store.set('cv_settings', S); window.cloud?.put('meta', 'settings', S); return ok; },
+  client(c){ const ok = store.set('cv_clients', clients); window.cloud?.put('clients', c.id, c); return ok; },
+  delClient(id){ const ok = store.set('cv_clients', clients); window.cloud?.del('clients', id); return ok; },
+  trip(t){ const ok = store.set('cv_trips', trips); window.cloud?.put('trips', t.id, t); return ok; },
+  delTrip(id){ const ok = store.set('cv_trips', trips); window.cloud?.del('trips', id); return ok; },
+  all(){ store.set('cv_settings', S); store.set('cv_clients', clients); store.set('cv_trips', trips); window.cloud?.putAll({settings:S, clients, trips}); }
+};
+/* Lo que el módulo de la nube usa para leer y reemplazar los datos de la app. */
+window.appData = {
+  get: () => ({settings:S, clients, trips}),
+  setSettings(obj){ S = Object.assign({}, DEFAULTS, obj); store.set('cv_settings', S); loadSettingsUI(); calc(); },
+  setClients(arr){ clients = arr; store.set('cv_clients', clients); fillClientSelect(); renderClients(); },
+  setTrips(arr){ trips = arr.sort((a, b) => (b.creado || 0) - (a.creado || 0)); store.set('cv_trips', trips); renderHistory(); },
+  status(state, email){
+    const b = $('syncBtn'), info = $('syncInfo');
+    const txt = { off:'☁️ Entrar', ok:'☁️ Sincronizado', offline:'☁️ Sin conexión', busy:'☁️ Conectando…', error:'⚠️ Error de sincronización' }[state] || '';
+    b.textContent = txt; b.classList.remove('hidden'); b.dataset.state = state;
+    info.textContent = state === 'off' ? 'No iniciaste sesión: los datos quedan solo en este dispositivo.'
+      : state === 'error' ? 'No se pudo sincronizar. Revisá la conexión y volvé a entrar.'
+      : `Conectado como ${email}. Los cambios se guardan en la nube y aparecen en tus otros dispositivos.` + (state === 'offline' ? ' Ahora estás sin conexión: los cambios se suben solos cuando vuelva internet.' : '');
+    $('btnLogin').classList.toggle('hidden', state !== 'off' && state !== 'error');
+    $('btnLogout').classList.toggle('hidden', state === 'off' || state === 'error');
+  }
+};
+
 const $ = id => document.getElementById(id);
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; };
 const val = id => num($(id).value);
@@ -425,14 +466,14 @@ document.querySelectorAll('[data-s]').forEach(el => {
   el.addEventListener('change', () => {
     const k = el.dataset.s;
     S[k] = (typeof DEFAULTS[k] === 'number') ? num(el.value) : el.value.trim();
-    store.set('cv_settings', S);
+    sync.settings();
     loadSettingsUI(); calc();
   });
 });
 $('btnReset').onclick = () => {
   if (!confirm('¿Volver a las tarifas y consumos por defecto? Tus clientes e historial no se borran.')) return;
   const keep = { googleKey:S.googleKey, firma:S.firma, vehiculo:S.vehiculo };
-  S = Object.assign({}, DEFAULTS, keep); store.set('cv_settings', S); loadSettingsUI(); calc(); toast('Tarifas restauradas');
+  S = Object.assign({}, DEFAULTS, keep); sync.settings(); loadSettingsUI(); calc(); toast('Tarifas restauradas');
 };
 $('btnExport').onclick = () => {
   const data = { app:'calculadora-viajes', version:1, exportado:new Date().toISOString(), settings:S, clients, trips };
@@ -453,7 +494,7 @@ $('importFile').onchange = async e => {
       clients = byId(clients, d.clients); trips = byId(trips, d.trips);
     } else { clients = d.clients; trips = d.trips; }
     if (d.settings) S = Object.assign({}, DEFAULTS, d.settings);
-    store.set('cv_settings', S); store.set('cv_clients', clients); store.set('cv_trips', trips);
+    sync.all();
     loadSettingsUI(); fillClientSelect(); calc();
     toast(`Importado: ${d.clients.length} clientes, ${d.trips.length} viajes`);
   }catch(err){ alert('El archivo no es una copia válida de la calculadora.'); }
@@ -751,13 +792,13 @@ $('btnSave').onclick = () => {
   const f = currentForm();
   if (!f.clienteId && f.clienteNombre && $('cliSave').checked){
     const c = { id:uid(), nombre:f.clienteNombre, tel:f.tel, desc:f.desc || 0, dir:f.origen, notas:'', updated:Date.now() };
-    clients.push(c); store.set('cv_clients', clients); f.clienteId = c.id; fillClientSelect(c.id);
+    clients.push(c); sync.client(c); f.clienteId = c.id; fillClientSelect(c.id);
   }
   const now = Date.now();
   const existing = editingId && trips.find(t => t.id === editingId);
   const rec = Object.assign({}, existing || { id:uid(), creado:now, estado:'Presupuesto' }, f, { total:lastCalc.total, neto:Math.round(lastCalc.neto), costoComb:Math.round(lastCalc.costoComb), updated:now });
   if (existing) trips[trips.indexOf(existing)] = rec; else trips.unshift(rec);
-  if (store.set('cv_trips', trips)){ editingId = rec.id; $('editingHint').textContent = 'Guardado. Los cambios que hagas se guardan sobre este mismo viaje.'; toast(existing ? 'Viaje actualizado' : 'Presupuesto guardado'); }
+  if (sync.trip(rec)){ editingId = rec.id; $('editingHint').textContent = 'Guardado. Los cambios que hagas se guardan sobre este mismo viaje.'; toast(existing ? 'Viaje actualizado' : 'Presupuesto guardado'); }
 };
 $('btnNew').onclick = () => resetForm();
 function resetForm(){
@@ -812,7 +853,7 @@ $('cliList').onclick = e => {
   if (b.dataset.a === 'wa') openWa(`Hola ${c.nombre.split(' ')[0]}!`, c.tel);
   if (b.dataset.a === 'ed') openClientDlg(c);
   if (b.dataset.a === 'del' && confirm(`¿Borrar a ${c.nombre}? Sus viajes quedan en el historial.`)){
-    clients = clients.filter(x => x.id !== c.id); store.set('cv_clients', clients); fillClientSelect(); renderClients();
+    clients = clients.filter(x => x.id !== c.id); sync.delClient(c.id); fillClientSelect(); renderClients();
   }
 };
 $('btnCliAdd').onclick = () => openClientDlg(null);
@@ -827,8 +868,9 @@ $('cliDlg').addEventListener('close', () => {
   if ($('cliDlg').returnValue !== 'ok') return;
   const data = { nombre:$('fNombre').value.trim(), tel:$('fTel').value.trim(), desc:num($('fDesc').value), dir:$('fDir').value.trim(), notas:$('fNotas').value.trim(), updated:Date.now() };
   if (!data.nombre) return;
-  if (editingClient) Object.assign(editingClient, data); else clients.push(Object.assign({id:uid()}, data));
-  store.set('cv_clients', clients); fillClientSelect(); renderClients(); toast('Cliente guardado');
+  let target = editingClient;
+  if (target) Object.assign(target, data); else { target = Object.assign({id:uid()}, data); clients.push(target); }
+  sync.client(target); fillClientSelect(); renderClients(); toast('Cliente guardado');
 });
 
 /* ===================== Historial ===================== */
@@ -859,7 +901,7 @@ $('histSearch').oninput = renderHistory; $('histFilter').onchange = renderHistor
 $('histList').addEventListener('change', e => {
   const s = e.target.closest('select[data-a="st"]'); if (!s) return;
   const t = trips.find(x => x.id === s.dataset.id); if (!t) return;
-  t.estado = s.value; t.updated = Date.now(); store.set('cv_trips', trips); renderHistory();
+  t.estado = s.value; t.updated = Date.now(); sync.trip(t); renderHistory();
 });
 $('histList').addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
@@ -867,7 +909,7 @@ $('histList').addEventListener('click', e => {
   if (b.dataset.a === 'open') loadTrip(t, false);
   if (b.dataset.a === 'copy') loadTrip(t, true);
   if (b.dataset.a === 'wa') openWa(quoteText(t, t.total), t.tel);
-  if (b.dataset.a === 'del' && confirm('¿Borrar este viaje del historial?')){ trips = trips.filter(x => x.id !== t.id); store.set('cv_trips', trips); renderHistory(); }
+  if (b.dataset.a === 'del' && confirm('¿Borrar este viaje del historial?')){ trips = trips.filter(x => x.id !== t.id); sync.delTrip(t.id); renderHistory(); }
 });
 
 /* ===================== Inicio ===================== */
@@ -875,6 +917,109 @@ loadSettingsUI();
 $('combSel').value = S.combustible;
 fillClientSelect();
 calc();
+</script>
+
+<!-- ===================== Sincronización en la nube (Firebase) ===================== -->
+<script type="module">
+// Configuración pública del proyecto de Firebase (no es secreta: la protección la dan las reglas de Firestore).
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyCPWkEAQHFLlUNW2ykVWiFwsnkxMaKA5rg',
+  authDomain: 'calculadora-viajes-6e1dc.firebaseapp.com',
+  projectId: 'calculadora-viajes-6e1dc',
+  storageBucket: 'calculadora-viajes-6e1dc.firebasestorage.app',
+  messagingSenderId: '803175615518',
+  appId: '1:803175615518:web:3b1c698834a6aa8e7ff20f'
+};
+const V = '11.0.2';
+
+const A = window.appData;
+const $ = id => document.getElementById(id);
+if (!FIREBASE_CONFIG){
+  $('syncCard').classList.add('hidden');
+} else {
+  A.status('busy');
+  try{
+    const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+    const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, onAuthStateChanged, signOut } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
+    const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, writeBatch } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+
+    const app = initializeApp(FIREBASE_CONFIG);
+    const auth = getAuth(app);
+    // Caché local: funciona sin señal y sube los cambios cuando vuelve la conexión.
+    const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+    const clean = o => JSON.parse(JSON.stringify(o)); // Firestore no acepta valores undefined
+    let uid = null, unsubs = [], user = null;
+
+    const ref = (kind, id) => doc(db, 'users', uid, kind, id);
+    const report = p => p.catch(e => { console.error(e); A.status('error'); });
+
+    window.cloud = {
+      put(kind, id, data){ if (uid) report(setDoc(ref(kind, id), clean(data))); },
+      del(kind, id){ if (uid) report(deleteDoc(ref(kind, id))); },
+      async putAll({settings, clients, trips}){
+        if (!uid) return;
+        const ops = [['meta', 'settings', settings], ...clients.map(c => ['clients', c.id, c]), ...trips.map(t => ['trips', t.id, t])];
+        for (let i = 0; i < ops.length; i += 400){
+          const b = writeBatch(db);
+          ops.slice(i, i + 400).forEach(([k, id, d]) => b.set(ref(k, id), clean(d)));
+          await report(b.commit());
+        }
+      }
+    };
+
+    // La primera vez que se entra en un dispositivo, se suben a la nube los datos que ya tenía guardados.
+    async function firstSync(){
+      const flag = 'cv_synced_' + uid;
+      let done = false; try{ done = !!localStorage.getItem(flag); }catch(e){}
+      if (done) return;
+      const local = A.get();
+      const [cs, ts, st] = await Promise.all([getDocs(collection(db, 'users', uid, 'clients')), getDocs(collection(db, 'users', uid, 'trips')), getDoc(doc(db, 'users', uid, 'meta', 'settings'))]);
+      const have = snap => new Map(snap.docs.map(d => [d.id, d.data()]));
+      const cMap = have(cs), tMap = have(ts);
+      const newer = (m, x) => !m.has(x.id) || (x.updated || 0) > (m.get(x.id).updated || 0);
+      // Si la nube ya tiene tarifas (de otro dispositivo), se respetan esas.
+      await window.cloud.putAll({
+        settings: st.exists() ? st.data() : local.settings,
+        clients: local.clients.filter(x => newer(cMap, x)),
+        trips: local.trips.filter(x => newer(tMap, x))
+      });
+      try{ localStorage.setItem(flag, '1'); }catch(e){}
+    }
+
+    function listen(){
+      const mark = snap => A.status(snap.metadata.fromCache && !navigator.onLine ? 'offline' : 'ok', user.email);
+      unsubs.push(onSnapshot(collection(db, 'users', uid, 'clients'), {includeMetadataChanges:true}, s => { A.setClients(s.docs.map(d => d.data())); mark(s); }, () => A.status('error')));
+      unsubs.push(onSnapshot(collection(db, 'users', uid, 'trips'), {includeMetadataChanges:true}, s => { A.setTrips(s.docs.map(d => d.data())); mark(s); }, () => A.status('error')));
+      unsubs.push(onSnapshot(doc(db, 'users', uid, 'meta', 'settings'), s => { if (s.exists()) A.setSettings(s.data()); }, () => A.status('error')));
+    }
+
+    onAuthStateChanged(auth, async u => {
+      unsubs.forEach(f => f()); unsubs = [];
+      user = u; uid = u ? u.uid : null;
+      if (!u){ A.status('off'); return; }
+      A.status('busy', u.email);
+      try{ await firstSync(); }catch(e){ console.error(e); }
+      listen();
+    });
+
+    const login = async () => {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt:'select_account' });
+      try{ await signInWithPopup(auth, provider); }
+      catch(e){
+        if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code)) await signInWithRedirect(auth, provider);
+        else if (e.code !== 'auth/popup-closed-by-user'){ console.error(e); alert('No se pudo iniciar sesión: ' + (e.message || e.code)); }
+      }
+    };
+    $('btnLogin').onclick = login;
+    $('btnLogout').onclick = () => { if (confirm('¿Cerrar sesión? Los datos quedan guardados en la nube y en este dispositivo.')) signOut(auth); };
+    $('syncBtn').onclick = () => { if (!uid) login(); else document.querySelector('nav [data-v=ajustes]').click(); };
+    window.addEventListener('online', () => uid && A.status('ok', user.email));
+    window.addEventListener('offline', () => uid && A.status('offline', user.email));
+  }catch(e){
+    console.error(e); A.status('error');
+  }
+}
 </script>
 </body>
 </html>
