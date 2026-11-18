@@ -105,6 +105,38 @@ textarea{min-height:64px;resize:vertical}
 .chip.Realizado{background:var(--ok-bg);color:var(--ok)}
 .chip.Cancelado{background:var(--danger-bg);color:var(--danger)}
 .chip.Confirmado{background:var(--warn-bg);color:var(--warn)}
+/* Selector de fecha y hora */
+.pickbtn{width:100%;display:flex;align-items:center;gap:8px;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 11px;min-height:42px;cursor:pointer;text-align:left}
+.pickbtn.empty span{color:var(--muted)}
+.pickbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+#fechaDlg{margin:auto auto 0;width:100%;max-width:440px;border-radius:18px 18px 0 0;max-height:92vh}
+@media (min-width:600px){ #fechaDlg{margin:auto;border-radius:18px} }
+#fechaDlg .card{padding:16px}
+.fp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.fp-head b{font-size:16px}
+.fp-quick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.fp-quick button,.fp-min button,.fp-hours button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:10px;min-height:40px;cursor:pointer}
+.fp-quick button{color:var(--accent);background:var(--accent-2);border-color:transparent}
+.fp-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.fp-cal-head b::first-letter{text-transform:uppercase}
+.fp-nav{width:38px;height:38px;border-radius:50%;border:0;background:none;color:var(--text);font-size:20px;cursor:pointer}
+.fp-nav:hover{background:var(--bg)}
+.fp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.fp-grid .wd{font-size:11.5px;color:var(--muted);font-weight:700;padding:4px 0}
+.fp-foot{position:sticky;bottom:0;background:var(--card);margin:0 -16px -16px;padding:4px 16px 16px;border-top:1px solid var(--line)}
+.fp-grid button{height:36px;width:36px;justify-self:center;border:0;border-radius:50%;background:none;color:var(--text);font:inherit;font-variant-numeric:tabular-nums;cursor:pointer}
+.fp-grid button:hover{background:var(--bg)}
+.fp-grid button.past{color:var(--muted);opacity:.55}
+.fp-grid button.today{box-shadow:inset 0 0 0 1.5px var(--accent);color:var(--accent);font-weight:700}
+.fp-grid button.sel{background:var(--accent);color:var(--accent-text);font-weight:700;opacity:1}
+.fp-label{font-size:12.5px;color:var(--muted);font-weight:600;margin:10px 0 6px}
+.fp-hours{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.fp-hours button{min-height:34px;font-variant-numeric:tabular-nums}
+.fp-hours button.night{color:var(--muted)}
+.fp-min{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.fp-hours button.sel,.fp-min button.sel{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.fp-preview{margin:12px 0 10px;padding:10px 12px;border-radius:10px;background:var(--accent-2);font-weight:700;text-align:center}
+.fp-preview::first-letter{text-transform:uppercase}
 .empty{text-align:center;color:var(--muted);padding:26px 10px}
 .sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .hidden{display:none!important}
@@ -144,7 +176,9 @@ dialog .card{margin:0;border:0;box-shadow:none}
     <div class="row">
       <div><label for="cliSel">Cliente frecuente</label>
         <select id="cliSel"><option value="">— Sin cliente / nuevo —</option></select></div>
-      <div><label for="fecha">Fecha y hora</label><input id="fecha" type="datetime-local"></div>
+      <div><label for="fechaBtn">Fecha y hora</label>
+        <input id="fecha" type="hidden">
+        <button type="button" class="pickbtn empty" id="fechaBtn">📅 <span>Sin fecha</span></button></div>
     </div>
     <div class="row" id="cliNew">
       <div><label for="cliNombre">Nombre</label><input id="cliNombre" placeholder="Ej: Juan Pérez"></div>
@@ -376,6 +410,34 @@ dialog .card{margin:0;border:0;box-shadow:none}
       <button class="btn primary" value="ok">Guardar</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="fechaDlg" aria-labelledby="fpTitle">
+  <div class="card">
+    <div class="fp-head"><b id="fpTitle">Fecha y hora del viaje</b><button class="fp-nav" id="fpClose" aria-label="Cerrar">✕</button></div>
+    <div class="fp-quick">
+      <button type="button" data-q="now">Ahora</button>
+      <button type="button" data-q="30">En 30 min</button>
+      <button type="button" data-q="tomorrow">Mañana 9:00</button>
+    </div>
+    <div class="fp-cal-head">
+      <button type="button" class="fp-nav" id="fpPrev" aria-label="Mes anterior">‹</button>
+      <b id="fpMonth"></b>
+      <button type="button" class="fp-nav" id="fpNext" aria-label="Mes siguiente">›</button>
+    </div>
+    <div class="fp-grid" id="fpGrid"></div>
+    <div class="fp-label">Hora</div>
+    <div class="fp-hours" id="fpHours"></div>
+    <div class="fp-label">Minutos</div>
+    <div class="fp-min" id="fpMins"></div>
+    <div class="fp-foot">
+      <div class="fp-preview" id="fpPreview"></div>
+      <div class="btns">
+        <button type="button" class="btn" id="fpClear">Quitar fecha</button>
+        <button type="button" class="btn primary" id="fpOk">Listo</button>
+      </div>
+    </div>
+  </div>
 </dialog>
 
 <div class="toast" id="toast"></div>
@@ -802,7 +864,8 @@ $('btnSave').onclick = () => {
 };
 $('btnNew').onclick = () => resetForm();
 function resetForm(){
-  ['origen','destino','km','min','espera','peajes','desc','peso','largo','ancho','alto','paqDesc','notas','cliNombre','cliTel','fecha'].forEach(id => $(id).value = '');
+  ['origen','destino','km','min','espera','peajes','desc','peso','largo','ancho','alto','paqDesc','notas','cliNombre','cliTel'].forEach(id => $(id).value = '');
+  fechaPicker.set('');
   $('stops').innerHTML = ''; $('vuelta').checked = false; $('cliSave').checked = false; $('combSel').value = S.combustible;
   $('r-origen').textContent = ''; $('r-destino').textContent = ''; setStatus('');
   Object.keys(coordsCache).forEach(k => delete coordsCache[k]);
@@ -817,7 +880,7 @@ function loadTrip(t, asCopy){
   if (!$('cliSel').value){ $('cliNombre').value = t.clienteNombre || ''; $('cliTel').value = t.tel || ''; }
   const map_ = { origen:'origen', destino:'destino', km:'km', min:'min', espera:'espera', peajes:'peajes', desc:'desc', peso:'peso', largo:'largo', ancho:'ancho', alto:'alto', paqDesc:'paqDesc', notas:'notas' };
   Object.entries(map_).forEach(([k, id]) => $(id).value = t[k] || '');
-  $('fecha').value = asCopy ? '' : (t.fecha || '');
+  fechaPicker.set(asCopy ? '' : (t.fecha || ''));
   $('combSel').value = t.comb || S.combustible; $('vuelta').checked = !!t.vuelta;
   (t.paradasList || []).forEach(p => addStop(p));
   editingId = asCopy ? null : t.id;
@@ -911,6 +974,75 @@ $('histList').addEventListener('click', e => {
   if (b.dataset.a === 'wa') openWa(quoteText(t, t.total), t.tel);
   if (b.dataset.a === 'del' && confirm('¿Borrar este viaje del historial?')){ trips = trips.filter(x => x.id !== t.id); sync.delTrip(t.id); renderHistory(); }
 });
+
+/* ===================== Selector de fecha y hora ===================== */
+const fechaPicker = (() => {
+  const dlg = $('fechaDlg');
+  const pad = n => String(n).padStart(2, '0');
+  const toVal = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const dayStart = d => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+  const roundUp = (d, step) => { const x = new Date(d); x.setSeconds(0,0); x.setMinutes(Math.ceil(x.getMinutes() / step) * step); return x; };
+  let cur = new Date(), viewY, viewM;
+
+  function label(v){
+    if (!v) return 'Sin fecha';
+    const d = new Date(v); if (isNaN(d)) return v;
+    const diff = Math.round((dayStart(d) - dayStart(new Date())) / 864e5);
+    const day = diff === 0 ? 'Hoy' : diff === 1 ? 'Mañana' : diff === -1 ? 'Ayer'
+      : d.toLocaleDateString('es-AR', {weekday:'short', day:'numeric', month:'short'});
+    return `${day}, ${pad(d.getHours())}:${pad(d.getMinutes())} h`;
+  }
+  function set(v){
+    $('fecha').value = v || '';
+    $('fechaBtn').querySelector('span').textContent = label(v);
+    $('fechaBtn').classList.toggle('empty', !v);
+  }
+  function render(){
+    const first = new Date(viewY, viewM, 1);
+    $('fpMonth').textContent = first.toLocaleDateString('es-AR', {month:'long', year:'numeric'});
+    const today = dayStart(new Date()).getTime(), sel = dayStart(cur).getTime();
+    const offset = (first.getDay() + 6) % 7; // semana empieza el lunes
+    const days = new Date(viewY, viewM + 1, 0).getDate();
+    let h = ['L','M','M','J','V','S','D'].map(w => `<div class="wd">${w}</div>`).join('') + '<div></div>'.repeat(offset);
+    for (let d = 1; d <= days; d++){
+      const t = new Date(viewY, viewM, d).getTime();
+      const cls = [t === sel ? 'sel' : '', t === today ? 'today' : '', t < today ? 'past' : ''].join(' ');
+      h += `<button type="button" class="${cls}" data-d="${d}" aria-label="${d}">${d}</button>`;
+    }
+    $('fpGrid').innerHTML = h;
+    $('fpHours').innerHTML = Array.from({length:24}, (_, i) => `<button type="button" data-h="${i}" class="${cur.getHours() === i ? 'sel' : ''}${i < 6 ? ' night' : ''}">${pad(i)}</button>`).join('');
+    const mins = [0, 15, 30, 45];
+    if (!mins.includes(cur.getMinutes())) mins.push(cur.getMinutes()), mins.sort((a, b) => a - b);
+    $('fpMins').style.gridTemplateColumns = `repeat(${mins.length},1fr)`;
+    $('fpMins').innerHTML = mins.map(m => `<button type="button" data-m="${m}" class="${cur.getMinutes() === m ? 'sel' : ''}">:${pad(m)}</button>`).join('');
+    $('fpPreview').textContent = cur.toLocaleDateString('es-AR', {weekday:'long', day:'numeric', month:'long'}) + ` · ${pad(cur.getHours())}:${pad(cur.getMinutes())} h`;
+  }
+  function open(){
+    const v = $('fecha').value;
+    cur = v && !isNaN(new Date(v)) ? new Date(v) : roundUp(new Date(Date.now() + 30 * 60000), 15);
+    viewY = cur.getFullYear(); viewM = cur.getMonth();
+    render(); dlg.showModal();
+  }
+  const done = d => { set(toVal(d)); dlg.close(); };
+
+  $('fechaBtn').onclick = open;
+  $('fpClose').onclick = () => dlg.close();
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); // tocar afuera cierra
+  $('fpPrev').onclick = () => { if (--viewM < 0){ viewM = 11; viewY--; } render(); };
+  $('fpNext').onclick = () => { if (++viewM > 11){ viewM = 0; viewY++; } render(); };
+  $('fpGrid').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; cur = new Date(viewY, viewM, +b.dataset.d, cur.getHours(), cur.getMinutes()); render(); };
+  $('fpHours').onclick = e => { const b = e.target.closest('[data-h]'); if (!b) return; cur.setHours(+b.dataset.h); render(); };
+  $('fpMins').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; cur.setMinutes(+b.dataset.m); render(); };
+  dlg.querySelector('.fp-quick').onclick = e => {
+    const q = e.target.closest('[data-q]')?.dataset.q; if (!q) return;
+    if (q === 'now') done(roundUp(new Date(), 5));
+    if (q === '30') done(roundUp(new Date(Date.now() + 30 * 60000), 5));
+    if (q === 'tomorrow'){ const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); done(d); }
+  };
+  $('fpOk').onclick = () => done(cur);
+  $('fpClear').onclick = () => { set(''); dlg.close(); };
+  return { set };
+})();
 
 /* ===================== Inicio ===================== */
 loadSettingsUI();
